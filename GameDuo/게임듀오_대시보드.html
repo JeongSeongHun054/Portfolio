@@ -30,9 +30,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .dashboard-header { background: var(--bg-header); color: var(--text-on-dark); padding: 22px 26px; border-radius: var(--radius); margin-bottom: var(--gap); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
 .dashboard-header h1 { font-size: 20px; font-weight:700; }
 .dashboard-header p { font-size:12px; color: rgba(255,255,255,0.65); margin-top:4px; }
-.filters { display:flex; gap:10px; align-items:center; }
+.filters { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 .filters select { padding:7px 12px; border-radius:6px; border:1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.1); color:#fff; font-size:13px; }
 .filters select option { background: var(--bg-header); color:#fff; }
+.quick-btns { display:flex; gap:6px; }
+.quick-btn { padding:6px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.08); color:rgba(255,255,255,0.85); font-size:12px; cursor:pointer; transition: background 0.2s ease, border-color 0.2s ease, transform 0.1s ease; }
+.quick-btn:hover { background: rgba(255,255,255,0.18); }
+.quick-btn:active { transform: scale(0.96); }
+.quick-btn.active { background:#4C72B0; border-color:#4C72B0; color:#fff; }
+.date-input { padding:6px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.1); color:#fff; font-size:12px; color-scheme: dark; }
+.date-sep { color:rgba(255,255,255,0.5); font-size:12px; }
+.period-summary { display:grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap:10px; margin-bottom:14px; }
+.ps-card { background:#f7f8fa; border-radius:8px; padding:10px 12px; transition: background 0.3s ease; }
+.ps-k { font-size:11px; color: var(--text-secondary); margin-bottom:4px; }
+.ps-v { font-size:17px; font-weight:700; transition: opacity 0.15s ease; }
 .kpi-row { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: var(--gap); margin-bottom: var(--gap); }
 .kpi-card { background: var(--bg-card); border-radius: var(--radius); padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 .kpi-label { font-size:12px; color: var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
@@ -68,11 +79,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div class="filters">
       <label style="font-size:12px;color:rgba(255,255,255,0.7)">기간</label>
-      <select id="periodFilter" onchange="dashboard.applyPeriod()">
-        <option value="all">전체 (365일)</option>
-        <option value="90">최근 90일</option>
-        <option value="30">최근 30일</option>
-      </select>
+      <div class="quick-btns">
+        <button type="button" class="quick-btn active" data-range="all">전체</button>
+        <button type="button" class="quick-btn" data-range="90">최근 90일</button>
+        <button type="button" class="quick-btn" data-range="30">최근 30일</button>
+      </div>
+      <input type="date" id="startDate" class="date-input" aria-label="시작일">
+      <span class="date-sep">~</span>
+      <input type="date" id="endDate" class="date-input" aria-label="종료일">
     </div>
   </header>
 
@@ -88,7 +102,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
   <section class="chart-row">
     <div class="chart-container full-width tall">
       <h3>일별 DAU &amp; 매출 추이</h3>
-      <div class="desc">막대 = DAU(좌축), 선 = 일 매출 USD(우축)</div>
+      <div class="desc">막대 = DAU(좌축), 선 = 일 매출 USD(우축) · 선택 기간: <span id="periodRangeLabel">전체</span></div>
+      <div class="period-summary">
+        <div class="ps-card"><div class="ps-k">평균 DAU</div><div class="ps-v" id="psAvgDau">-</div></div>
+        <div class="ps-card"><div class="ps-k">기간 매출</div><div class="ps-v" id="psRevenue">-</div></div>
+        <div class="ps-card"><div class="ps-k">기간 결제건수</div><div class="ps-v" id="psTx">-</div></div>
+        <div class="ps-card"><div class="ps-k">기간 신규가입</div><div class="ps-v" id="psNewUsers">-</div></div>
+      </div>
       <canvas id="trendChart"></canvas>
     </div>
   </section>
@@ -168,6 +188,12 @@ const CHANNEL_DATA = [
 
 const COLORS = ['#4C72B0','#DD8452','#55A868','#C44E52','#8172B3','#937860'];
 
+const DATA_MIN_DATE = DAILY_RAW[0][0];
+const DATA_MAX_DATE = DAILY_RAW[DAILY_RAW.length - 1][0];
+
+Chart.defaults.animation = { duration: 700, easing: 'easeOutQuart' };
+Chart.defaults.transitions.active.animation.duration = 300;
+
 function fmt(v, type) {
   if (v === null || v === undefined) return '-';
   switch(type) {
@@ -187,50 +213,130 @@ function fmt(v, type) {
 class Dashboard {
   constructor() {
     this.charts = {};
+    this.psVals = {}; // tracks current displayed values for smooth count-up animation
+    this.psFrames = {};
     this.init();
   }
   init() {
-    this.renderTrend('all');
+    this.setupDateControls();
+    this.renderTrend(DAILY_RAW);
+    this.updatePeriodSummary(DAILY_RAW);
     this.renderRetention();
     this.renderSegment();
     this.renderCountry();
     this.renderChannel();
     this.renderChannelTable();
   }
-  applyPeriod() {
-    const val = document.getElementById('periodFilter').value;
-    this.renderTrend(val);
+  setupDateControls() {
+    const startEl = document.getElementById('startDate');
+    const endEl = document.getElementById('endDate');
+    startEl.min = DATA_MIN_DATE; startEl.max = DATA_MAX_DATE; startEl.value = DATA_MIN_DATE;
+    endEl.min = DATA_MIN_DATE; endEl.max = DATA_MAX_DATE; endEl.value = DATA_MAX_DATE;
+
+    const onDateChange = () => { this.setActiveQuickBtn(null); this.applyCustomRange(); };
+    startEl.addEventListener('change', onDateChange);
+    endEl.addEventListener('change', onDateChange);
+
+    document.querySelectorAll('.quick-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const range = btn.dataset.range;
+        if (range === 'all') {
+          startEl.value = DATA_MIN_DATE;
+          endEl.value = DATA_MAX_DATE;
+        } else {
+          const n = parseInt(range);
+          const maxD = new Date(DATA_MAX_DATE + 'T00:00:00');
+          const startD = new Date(maxD);
+          startD.setDate(startD.getDate() - (n - 1));
+          const minD = new Date(DATA_MIN_DATE + 'T00:00:00');
+          startEl.value = (startD < minD ? minD : startD).toISOString().slice(0, 10);
+          endEl.value = DATA_MAX_DATE;
+        }
+        this.setActiveQuickBtn(btn);
+        this.applyCustomRange();
+      });
+    });
   }
-  renderTrend(period) {
-    let data = DAILY_RAW;
-    if (period !== 'all') {
-      const n = parseInt(period);
-      data = DAILY_RAW.slice(-n);
-    }
+  setActiveQuickBtn(activeBtn) {
+    document.querySelectorAll('.quick-btn').forEach(b => b.classList.toggle('active', b === activeBtn));
+  }
+  applyCustomRange() {
+    const startEl = document.getElementById('startDate');
+    const endEl = document.getElementById('endDate');
+    let start = startEl.value, end = endEl.value;
+    if (start && end && start > end) { [start, end] = [end, start]; startEl.value = start; endEl.value = end; }
+    const filtered = DAILY_RAW.filter(d => d[0] >= start && d[0] <= end);
+    this.renderTrend(filtered.length ? filtered : DAILY_RAW);
+    this.updatePeriodSummary(filtered.length ? filtered : DAILY_RAW);
+  }
+  renderTrend(data) {
     const labels = data.map(d => d[0]);
     const dau = data.map(d => parseInt(d[1]));
     const revenue = data.map(d => parseFloat(d[3]));
-    if (this.charts.trend) this.charts.trend.destroy();
-    const ctx = document.getElementById('trendChart').getContext('2d');
-    this.charts.trend = new Chart(ctx, {
-      data: {
-        labels: labels,
-        datasets: [
-          { type:'bar', label:'DAU', data: dau, backgroundColor:'#4C72B0AA', yAxisID:'y', borderRadius:2 },
-          { type:'line', label:'일 매출(USD)', data: revenue, borderColor:'#C44E52', backgroundColor:'#C44E5220', yAxisID:'y1', tension:0.25, pointRadius:0, borderWidth:2 }
-        ]
-      },
-      options: {
-        responsive:true, maintainAspectRatio:false,
-        interaction:{mode:'index', intersect:false},
-        plugins:{ legend:{position:'top', labels:{usePointStyle:true}} },
-        scales: {
-          x: { ticks:{ maxTicksLimit: 12 }, grid:{display:false} },
-          y: { position:'left', beginAtZero:true, title:{display:true,text:'DAU'} },
-          y1:{ position:'right', beginAtZero:true, grid:{drawOnChartArea:false}, title:{display:true,text:'매출(USD)'} }
+    if (!this.charts.trend) {
+      const ctx = document.getElementById('trendChart').getContext('2d');
+      this.charts.trend = new Chart(ctx, {
+        data: {
+          labels: labels,
+          datasets: [
+            { type:'bar', label:'DAU', data: dau, backgroundColor:'#4C72B0AA', yAxisID:'y', borderRadius:2 },
+            { type:'line', label:'일 매출(USD)', data: revenue, borderColor:'#C44E52', backgroundColor:'#C44E5220', yAxisID:'y1', tension:0.25, pointRadius:0, borderWidth:2 }
+          ]
+        },
+        options: {
+          responsive:true, maintainAspectRatio:false,
+          interaction:{mode:'index', intersect:false},
+          plugins:{ legend:{position:'top', labels:{usePointStyle:true}} },
+          scales: {
+            x: { ticks:{ maxTicksLimit: 12 }, grid:{display:false} },
+            y: { position:'left', beginAtZero:true, title:{display:true,text:'DAU'} },
+            y1:{ position:'right', beginAtZero:true, grid:{drawOnChartArea:false}, title:{display:true,text:'매출(USD)'} }
+          }
         }
+      });
+      return;
+    }
+    // Update in place (instead of destroy+recreate) so Chart.js animates the transition smoothly.
+    const chart = this.charts.trend;
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = dau;
+    chart.data.datasets[1].data = revenue;
+    chart.update();
+  }
+  updatePeriodSummary(data) {
+    const label = document.getElementById('periodRangeLabel');
+    if (data.length) {
+      const isFull = data.length === DAILY_RAW.length;
+      label.textContent = isFull ? `전체 (${data.length}일)` : `${data[0][0]} ~ ${data[data.length - 1][0]} (${data.length}일)`;
+    }
+    const sumRevenue = data.reduce((s, d) => s + parseFloat(d[3]), 0);
+    const sumTx = data.reduce((s, d) => s + parseInt(d[4]), 0);
+    const sumNewUsers = data.reduce((s, d) => s + parseInt(d[2]), 0);
+    const avgDau = data.length ? data.reduce((s, d) => s + parseInt(d[1]), 0) / data.length : 0;
+
+    this.animateValue('psAvgDau', avgDau, v => Math.round(v).toLocaleString());
+    this.animateValue('psRevenue', sumRevenue, v => fmt(v, 'currency'));
+    this.animateValue('psTx', sumTx, v => Math.round(v).toLocaleString());
+    this.animateValue('psNewUsers', sumNewUsers, v => fmt(Math.round(v), 'number'));
+  }
+  animateValue(elId, target, formatFn, duration = 600) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (this.psFrames[elId]) cancelAnimationFrame(this.psFrames[elId]);
+    const from = this.psVals[elId] ?? 0;
+    const startTime = performance.now();
+    const step = (now) => {
+      const t = Math.min((now - startTime) / duration, 1);
+      const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+      const current = from + (target - from) * eased;
+      el.textContent = formatFn(current);
+      if (t < 1) {
+        this.psFrames[elId] = requestAnimationFrame(step);
+      } else {
+        this.psVals[elId] = target;
       }
-    });
+    };
+    this.psFrames[elId] = requestAnimationFrame(step);
   }
   renderRetention() {
     const ctx = document.getElementById('retentionChart').getContext('2d');
