@@ -121,7 +121,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div class="chart-container tall">
       <h3>과금 세그먼트별 매출 비중</h3>
-      <div class="desc">웨일 0.5%가 전체 매출의 69%를 차지 (전형적 F2P 구조)</div>
+      <div class="desc">도넛 크기 = 매출 비중 · 범례의 유저 비중과 비교해서 볼 것 — 웨일 0.5%가 전체 매출의 69%를 차지 (전형적 F2P 구조)</div>
       <canvas id="segmentChart"></canvas>
     </div>
   </section>
@@ -165,10 +165,10 @@ const RETENTION_DATA = [
 ];
 
 const SEGMENT_DATA = [
-{seg:"웨일 (0.5%)", users:2477, revenue:2016637.88},
-{seg:"돌핀 (1.5%)", users:7580, revenue:616282.09},
-{seg:"미노우 (3.0%)", users:15154, revenue:286355.51},
-{seg:"무과금 (95%)", users:474789, revenue:0}
+{seg:"웨일", userPct:0.005, users:2477, revenue:2016637.88},
+{seg:"돌핀", userPct:0.015, users:7580, revenue:616282.09},
+{seg:"미노우", userPct:0.030, users:15154, revenue:286355.51},
+{seg:"무과금", userPct:0.950, users:474789, revenue:0}
 ];
 
 const COUNTRY_DATA = [
@@ -355,10 +355,16 @@ class Dashboard {
   }
   renderSegment() {
     const ctx = document.getElementById('segmentChart').getContext('2d');
+    const totalRevenue = SEGMENT_DATA.reduce((s,d)=>s+d.revenue,0);
+    // Legend labels must reflect the same metric the donut slices are sized by (revenue),
+    // not user share — otherwise a 95%-of-users segment with 0 revenue looks like a rendering bug.
     new Chart(ctx, {
       type:'doughnut',
       data: {
-        labels: SEGMENT_DATA.map(d=>d.seg),
+        labels: SEGMENT_DATA.map(d => {
+          const revPct = totalRevenue ? (d.revenue / totalRevenue * 100) : 0;
+          return `${d.seg} · 매출 ${revPct.toFixed(1)}% (유저 ${(d.userPct*100).toFixed(1)}%)`;
+        }),
         datasets: [{ data: SEGMENT_DATA.map(d=>d.revenue), backgroundColor: COLORS.map(c=>c+'CC'), borderColor:'#fff', borderWidth:2 }]
       },
       options: {
@@ -366,9 +372,9 @@ class Dashboard {
         plugins: {
           legend:{position:'right', labels:{usePointStyle:true, padding:12, font:{size:11}}},
           tooltip:{callbacks:{label:c=>{
-            const total = c.dataset.data.reduce((a,b)=>a+b,0);
-            const pct = ((c.parsed/total)*100).toFixed(1);
-            return `${c.label}: ${fmt(c.parsed,'currency')} (${pct}%)`;
+            const d = SEGMENT_DATA[c.dataIndex];
+            const revPct = totalRevenue ? (d.revenue / totalRevenue * 100).toFixed(1) : '0.0';
+            return `${d.seg}: ${fmt(d.revenue,'currency')} · 매출 비중 ${revPct}% · 유저 비중 ${(d.userPct*100).toFixed(1)}%`;
           }}}
         }
       }
