@@ -1,0 +1,26 @@
+version: 2
+
+models:
+  - name: daily_kpi_summary
+    description: 날짜별 DAU/신규가입/매출/ARPU 요약. 대시보드의 트렌드 차트가 이 테이블을 참조한다.
+    columns:
+      - name: date
+        tests: [not_null, unique]
+      - name: dau
+        tests: [not_null]
+
+  - name: user_summary
+    description: 유저별 총 세션/이벤트/매출 요약. 이탈예측 모델과 대시보드 세그먼트 분석의 기반 테이블.
+    columns:
+      - name: user_id
+        tests: [not_null, unique]
+      - name: payer_segment
+        tests:
+          - accepted_values:
+              values: ['non_payer', 'minnow', 'dolphin', 'whale']
+
+  - name: cohort_retention
+    description: 설치 주차 코호트 x 경과일별 잔존율.
+
+  - name: channel_performance
+    description: 마케팅 채널 x 국가별 CPI/ROAS/D7 리텐션.

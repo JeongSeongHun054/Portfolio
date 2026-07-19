@@ -1,0 +1,29 @@
+version: 2
+
+sources:
+  - name: raw
+    database: newproject-502815
+    schema: dungeon_game_analytics
+    description: 시뮬레이션한 방치형 RPG 게임의 raw 로그 테이블
+    tables:
+      - name: users
+        description: 유저 마스터 테이블 (50만 명)
+        columns:
+          - name: user_id
+            tests: [not_null, unique]
+      - name: sessions
+        description: 세션 로그 (736만 건)
+        columns:
+          - name: session_id
+            tests: [not_null, unique]
+      - name: events
+        description: 행동 이벤트 로그 (9,202만 건)
+      - name: purchases
+        description: 결제 로그
+        columns:
+          - name: transaction_id
+            tests: [not_null, unique]
+      - name: marketing_spend
+        description: 채널별 일별 마케팅 비용
+      - name: ab_test_assignment
+        description: A/B 테스트 컨트롤/트리트먼트 배정
